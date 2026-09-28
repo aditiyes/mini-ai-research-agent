@@ -40,24 +40,33 @@ def render_report(report: dict[str, Any]) -> str:
     lines = ["Evidence"]
     if report["evidence"]:
         for item in report["evidence"]:
-            lines.append(f'- [{item["id"]}] {item["title"]}: {item["text"]}')
+            if item.get("url"):
+                lines.append(f'- {item["title"]}: {item["text"]}')
+                lines.append(f'  Source: {item["url"]}')
+            else:
+                lines.append(f'- [{item["id"]}] {item["title"]}: {item["text"]}')
     else:
-        lines.append("- No relevant evidence was found in the local corpus.")
+        lines.append("- No relevant evidence was found.")
 
     lines.extend(["", "Synthesis", report["synthesis"], "", "Source notes"])
     if report["source_notes"]:
         for source in report["source_notes"]:
-            lines.append(
-                f'- [{source["id"]}] {source["title"]}, {source["organization"]} '
+            citation = (
+                f'- {source["title"]}, {source["organization"]} '
                 f'({source["published"]})'
             )
+            if source.get("url"):
+                citation += f'\n  URL: {source["url"]}'
+            else:
+                citation = f'- [{source["id"]}] {citation[2:]}'
+            lines.append(citation)
     else:
         lines.append("- No sources retrieved.")
     return "\n".join(lines)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Research a question using a local read-only corpus.")
+    parser = argparse.ArgumentParser(description="Research a question using read-only web search and a local corpus.")
     parser.add_argument("question", nargs="*", help="Research question")
     parser.add_argument("--question", dest="explicit_question", help="Question to research")
     parser.add_argument("--model", default=None, help="OpenAI model name to use")

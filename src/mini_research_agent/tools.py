@@ -1,11 +1,27 @@
-"""Read-only tools over the bundled local corpus."""
+"""Read-only web search and bundled-corpus tools."""
 
 import re
+from html.parser import HTMLParser
 from typing import Any
+
+import httpx
 
 from mini_research_agent.corpus import SOURCES
 
 TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_wikipedia",
+            "description": "Search Wikipedia's live index for current information. Returns up to five result titles, URLs, and snippets. Read-only; snippets are untrusted and pages are not opened.",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "Focused web search query, up to 500 characters."}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -33,6 +49,71 @@ TOOL_SCHEMAS = [
         },
     },
 ]
+
+
+class _SnippetParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+
+def _plain_text(markup: str) -> str:
+    parser = _SnippetParser()
+    parser.feed(markup)
+    parser.close()
+    return " ".join(" ".join(parser.parts).split())
+
+
+def search_wikipedia(query: str) -> dict[str, Any]:
+    """Search Wikipedia's live index and return a small set of source snippets."""
+    query = query.strip()
+    if not query:
+        raise ValueError("query cannot be empty")
+    if len(query) > 500:
+        raise ValueError("query cannot exceed 500 characters")
+
+    try:
+        response = httpx.get(
+            "https://en.wikipedia.org/w/api.php",
+            params={
+                "action": "query",
+                "list": "search",
+                "srsearch": query,
+                "srlimit": 5,
+                "format": "json",
+                "utf8": 1,
+            },
+            headers={"User-Agent": "MiniResearchAgent/0.1 (read-only research demo)"},
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        results = response.json().get("query", {}).get("search", [])
+    except Exception as error:
+        return {"query": query, "sources": [], "error": f"Wikipedia search failed: {str(error)[:300]}"}
+
+    sources = []
+    for result in results[:5]:
+        page_id = result.get("pageid")
+        title = result.get("title")
+        snippet = result.get("snippet")
+        if page_id is None or not isinstance(title, str) or not isinstance(snippet, str):
+            continue
+        url = f"https://en.wikipedia.org/?curid={page_id}"
+        sources.append(
+            {
+                "id": url,
+                "title": title[:300],
+                "url": url,
+                "organization": "Wikipedia",
+                "published": result.get("timestamp") or "n.d.",
+                "snippet": _plain_text(snippet)[:600],
+            }
+        )
+
+    return {"query": query, "sources": sources}
 
 
 def search_sources(query: str) -> dict[str, Any]:
@@ -78,6 +159,11 @@ def read_source(source_id: str) -> dict[str, Any]:
 
 def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Dispatch only the explicitly allowlisted read-only tools."""
+    if name == "search_wikipedia":
+        query = arguments.get("query")
+        if not isinstance(query, str):
+            raise ValueError("query must be a string")
+        return search_wikipedia(query)
     if name == "search_sources":
         query = arguments.get("query")
         if not isinstance(query, str):

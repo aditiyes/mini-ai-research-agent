@@ -1,11 +1,12 @@
 # Mini AI Research Agent
 
-A small Python CLI agent that answers research questions using two safe, read-only tools over a bundled local corpus:
+A small Python CLI agent that answers research questions using three read-only tools:
 
-- `search_sources(query)` finds matching source records and short excerpts.
-- `read_source(source_id)` returns the full text of a corpus record.
+- `search_wikipedia(query)` searches Wikipedia's live index and returns up to five titles, URLs, and snippets.
+- `search_sources(query)` finds matching records in a small illustrative local corpus.
+- `read_source(source_id)` returns the full text of a local corpus record.
 
-The agent can make up to five model turns, skips repeated identical tool calls, records every tool result, and formats the final report as **Evidence**, **Synthesis**, and **Source notes**. The evidence and notes are assembled from tool outputs; synthesis is the model's concise interpretation. The bundled entries are illustrative demo material, not authoritative research or citations.
+The agent can make up to five model turns, skips repeated identical tool calls, records every tool result, and formats the final report as **Evidence**, **Synthesis**, and **Source notes**. Wikipedia results are snippets only: the agent does not open pages, and snippets are treated as untrusted input. This is live search over Wikipedia, not a general-purpose web search engine. The bundled local entries are illustrative demo material, not authoritative research or citations.
 
 ## Setup
 
@@ -33,7 +34,7 @@ Or run the module directly:
 python -m mini_research_agent.cli "What does the demo corpus say about sleep?"
 ```
 
-`--trace` appends the ordered tool-call log as JSON. Only the local corpus tools are exposed to the model; the agent has no general web, filesystem-write, or command-execution tools.
+`--trace` appends the ordered tool-call log as JSON. The agent has no filesystem-write or command-execution tools. Live Wikipedia search requires an internet connection; the local corpus remains available as supplementary demo material.
 
 ## Tests
 
@@ -43,4 +44,4 @@ Tests use a fake model client and require no API key or network access:
 python -m pytest
 ```
 
-The tests cover evidence collection, empty search results, repeated and disallowed calls, and the iteration limit.
+The tests cover evidence collection, empty search results, web-result normalization and provider errors, repeated and disallowed calls, and the iteration limit. Search-provider tests are mocked and do not require network access.

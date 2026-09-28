@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "A bounded, read-only tool-using research agent over a local source corpus."
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = ["openai>=1.30"]
+dependencies = ["openai>=1.30", "httpx>=0.27"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

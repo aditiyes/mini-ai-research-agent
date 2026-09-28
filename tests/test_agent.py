@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from mini_research_agent.agent import ResearchAgent
 from mini_research_agent.cli import main, render_report
+from mini_research_agent.tools import search_wikipedia
 
 
 def response(content=None, tool_calls=None):
@@ -29,6 +30,94 @@ class FakeClient:
     def create(self, **kwargs):
         self.calls += 1
         return next(self.responses)
+
+
+def test_search_wikipedia_normalizes_results_and_limits_result_count(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "query": {
+                    "search": [
+                        {
+                            "pageid": 123,
+                            "title": "Example result",
+                            "snippet": "A <span>short</span> evidence snippet.",
+                            "timestamp": "2026-09-27T12:00:00Z",
+                        }
+                    ]
+                }
+            }
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr("mini_research_agent.tools.httpx.get", fake_get)
+
+    result = search_wikipedia("current research")
+
+    assert captured["params"]["srlimit"] == 5
+    assert captured["timeout"] == 10.0
+    assert result["sources"] == [
+        {
+            "id": "https://en.wikipedia.org/?curid=123",
+            "title": "Example result",
+            "url": "https://en.wikipedia.org/?curid=123",
+            "organization": "Wikipedia",
+            "published": "2026-09-27T12:00:00Z",
+            "snippet": "A short evidence snippet.",
+        }
+    ]
+
+
+def test_search_wikipedia_returns_structured_error_on_provider_failure(monkeypatch):
+    def failing_get(url, **kwargs):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr("mini_research_agent.tools.httpx.get", failing_get)
+
+    result = search_wikipedia("current research")
+
+    assert result["sources"] == []
+    assert "provider unavailable" in result["error"]
+
+
+def test_agent_includes_live_search_urls_in_report(monkeypatch):
+    source_url = "https://en.wikipedia.org/?curid=123"
+    monkeypatch.setattr(
+        "mini_research_agent.agent.execute_tool",
+        lambda name, arguments: {
+            "sources": [
+                {
+                    "id": source_url,
+                    "title": "Artemis program",
+                    "url": source_url,
+                    "organization": "Wikipedia",
+                    "published": "n.d.",
+                    "snippet": "The Artemis program is NASA's lunar exploration program.",
+                }
+            ]
+        },
+    )
+    client = FakeClient(
+        [
+            response(tool_calls=[tool_call("1", "search_wikipedia", {"query": "Artemis program"})]),
+            response(content="Wikipedia search results cover the Artemis program and missions."),
+        ]
+    )
+
+    report = ResearchAgent(client, "test-model").run("What is NASA's Artemis program?")
+
+    assert report["trace"][0]["tool"] == "search_wikipedia"
+    assert report["evidence"][0]["url"] == source_url
+    assert report["source_notes"][0]["url"] == source_url
+    assert source_url in render_report(report)
 
 
 def test_agent_collects_sources_and_returns_separate_synthesis():
