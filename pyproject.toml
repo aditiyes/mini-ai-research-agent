@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mini-ai-research-agent"
+version = "0.1.0"
+description = "A bounded, read-only tool-using research agent over a local source corpus."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["openai>=1.30"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+mini-research = "mini_research_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
