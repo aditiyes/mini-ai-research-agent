@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: mini-ai-research-agent
+    runtime: python
+    plan: free
+    buildCommand: pip install .
+    startCommand: uvicorn mini_research_agent.web:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: APP_ACCESS_TOKEN
+        sync: false

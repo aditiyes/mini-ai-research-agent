@@ -2,9 +2,12 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+from fastapi.testclient import TestClient
+
 from mini_research_agent.agent import ResearchAgent
 from mini_research_agent.cli import main, render_report
 from mini_research_agent.tools import search_wikipedia
+from mini_research_agent.web import app
 
 
 def response(content=None, tool_calls=None):
@@ -118,6 +121,64 @@ def test_agent_includes_live_search_urls_in_report(monkeypatch):
     assert report["evidence"][0]["url"] == source_url
     assert report["source_notes"][0]["url"] == source_url
     assert source_url in render_report(report)
+
+
+def test_web_homepage_is_served():
+    response = TestClient(app).get("/")
+
+    assert response.status_code == 200
+    assert "Research brief" in response.text
+
+
+def test_web_research_requires_access_token_and_keeps_api_key_server_side(monkeypatch):
+    captured = {}
+
+    class DummyOpenAI:
+        def __init__(self, api_key):
+            captured["api_key"] = api_key
+
+    class DummyAgent:
+        def __init__(self, client, model):
+            captured["model"] = model
+
+        def run(self, question):
+            captured["question"] = question
+            return {"question": question, "evidence": [], "synthesis": "Brief", "source_notes": [], "trace": []}
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("APP_ACCESS_TOKEN", "test-access-code")
+    monkeypatch.setenv("OPENAI_API_KEY", "server-only-key")
+    monkeypatch.setattr("mini_research_agent.web.OpenAI", DummyOpenAI)
+    monkeypatch.setattr("mini_research_agent.web.ResearchAgent", DummyAgent)
+    client = TestClient(app)
+
+    unauthorized = client.post("/api/research", json={"question": "A research question"})
+    response = client.post(
+        "/api/research",
+        headers={"x-app-token": "test-access-code"},
+        json={"question": "A research question"},
+    )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["synthesis"] == "Brief"
+    assert captured == {
+        "api_key": "server-only-key",
+        "model": "gpt-4o-mini",
+        "question": "A research question",
+    }
+
+
+def test_web_research_fails_closed_without_production_access_token(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("APP_ACCESS_TOKEN", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "server-only-key")
+
+    response = TestClient(app).post(
+        "/api/research", json={"question": "A research question"}
+    )
+
+    assert response.status_code == 503
 
 
 def test_agent_collects_sources_and_returns_separate_synthesis():
